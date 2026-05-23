@@ -1,6 +1,6 @@
 {
   "name": "@mintplayer/actions",
-  "version": "1.0.10",
+  "version": "1.1.0",
   "private": true,
   "description": "More generic GitHub Action to cherry-pick merged commits into release branches",
   "repository": {
@@ -18,7 +18,8 @@
     "pack:cherry-pick": "ncc build lib/cherry-pick -o dist/cherry-pick --minify",
     "pack:get-gpr-version": "ncc build lib/get-gpr-version -o dist/get-gpr-version --minify",
     "pack:get-npmjs-version": "ncc build lib/get-npmjs-version -o dist/get-npmjs-version --minify",
-    "all": "npm run build && npm run pack:delay && npm run pack:cherry-pick && npm run pack:get-gpr-version && npm run pack:get-npmjs-version",
+    "pack:publish-npm-packages": "ncc build lib/publish-npm-packages -o dist/publish-npm-packages --minify",
+    "all": "npm run build && npm run pack:delay && npm run pack:cherry-pick && npm run pack:get-gpr-version && npm run pack:get-npmjs-version && npm run pack:publish-npm-packages",
     "test": "jest"
   },
   "keywords": [
@@ -36,8 +37,11 @@
   "dependencies": {
     "@actions/core": "^1.10.1",
     "@actions/exec": "^1.1.1",
+    "@jsdevtools/npm-publish": "^4.1.5",
     "@octokit/rest": "^21.0.2",
-    "axios": "^1.7.7"
+    "axios": "^1.7.7",
+    "fast-glob": "^3.3.2",
+    "p-limit": "^3.1.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.8",

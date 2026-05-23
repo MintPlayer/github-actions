@@ -1,0 +1,42 @@
+name: 'Publish npm packages'
+description: 'Discover and publish every npm package in a folder to one or more registries.'
+author: MintPlayer
+
+inputs:
+  folder:
+    description: 'Folder to scan recursively for publishable package.json files.'
+    required: true
+  registries:
+    description: |
+      JSON array of registry descriptors. Each entry:
+        { "url": string,                  # required, http(s)
+          "token": string,                # required
+          "access": "public"|"restricted",# optional, default "public"
+          "skipDuplicate": boolean,       # optional, default true
+          "provenance": boolean }         # optional, default true on registry.npmjs.org else false
+    required: true
+  order:
+    description: |
+      Optional JSON array-of-arrays of package-name globs that overrides the
+      computed topological order.
+    required: false
+  concurrency:
+    description: 'Max packages published in parallel within a wave.'
+    required: false
+    default: '4'
+  dry-run:
+    description: 'If true, run npm publish --dry-run instead of publishing.'
+    required: false
+    default: 'false'
+
+outputs:
+  published:
+    description: 'JSON array of {name, version, registry} tuples that were actually published.'
+  skipped:
+    description: 'JSON array of {name, version, registry, reason} tuples that were skipped.'
+  failed:
+    description: 'JSON array of {name, version, registry, error} tuples that failed.'
+
+runs:
+  using: node20
+  main: ../dist/publish-npm-packages/index.js
