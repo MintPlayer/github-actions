@@ -1,0 +1,171 @@
+name: 'Compile TS action'
+description: 'Install, test and bundle a TypeScript GitHub Action, then either verify the committed bundle is current or commit and tag it'
+
+# One place for the TypeScript -> single index.js pipeline every node action in the org
+# needs. Callers supply where and what, never how.
+#
+# Two modes, one code path:
+#   verify  rebuild and fail if the committed bundle differs. For pull requests.
+#   push    rebuild, commit the bundle, push, and move the tags consumers pin.
+#
+# They differ only in the last step, and both reach the same drift.sh for the one decision
+# that matters -- so a green `verify` on a pull request is real evidence that the later
+# `push` produces the same bytes.
+#
+# Note on inputs: install-command, test-command and build-command are arbitrary shell,
+# by design. Never wire an untrusted value (a PR title, a branch name, an issue body)
+# into them -- in push mode this action holds contents: write.
+
+inputs:
+  working-directory:
+    description: 'Directory holding the action package (its own package.json and lockfile).'
+    required: false
+    default: '.'
+  output-dir:
+    description: 'Bundle directory, relative to working-directory. Checked in verify mode, committed in push mode.'
+    required: false
+    default: 'dist'
+  node-version:
+    description: 'Node version used to build. Should match the action.yml `runs.using` runtime.'
+    required: false
+    default: '20.x'
+  install-command:
+    description: 'Dependency install. `npm ci` enforces the lockfile; `npm install` does not.'
+    required: false
+    default: 'npm ci'
+  test-command:
+    description: 'Test command. Empty string skips testing -- say so explicitly rather than by omission.'
+    required: false
+    default: 'npm test'
+  build-command:
+    description: 'Build command. Must write the bundle into output-dir.'
+    required: false
+    default: 'npm run build'
+  mode:
+    description: 'verify | push'
+    required: false
+    default: 'verify'
+  commit-message:
+    description: 'Commit subject used in push mode.'
+    required: false
+    default: 'build: repack the action bundle'
+  major-tag:
+    description: >-
+      Moving tag force-updated to the commit just pushed (e.g. coverage-upload-v1). This is what
+      consumers pin. Empty means do not tag.
+    required: false
+    default: ''
+  version-tag-from:
+    description: >-
+      Path to a package.json whose `version` mints an immutable tag, relative to the repository
+      root -- NOT to working-directory. Empty means do not cut one.
+    required: false
+    default: ''
+  version-tag-prefix:
+    description: 'Prefix for the immutable tag, e.g. coverage-upload-v -> coverage-upload-v1.2.0.'
+    required: false
+    default: 'v'
+  token:
+    description: >-
+      Token used to push, applied as a git extraheader so push mode works regardless of the
+      caller's actions/checkout persist-credentials setting. The default GITHUB_TOKEN does not
+      trigger workflows, so committing a bundle cannot loop; swapping in a PAT removes that
+      guarantee and would need an explicit [skip ci].
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  changed:
+    description: 'true when the rebuild produced a bundle different from the committed one.'
+    value: ${{ steps.drift.outputs.changed }}
+  version-tag:
+    description: 'The immutable tag created, or empty.'
+    value: ${{ steps.publish.outputs.version-tag }}
+
+runs:
+  using: composite
+  steps:
+    # A typo'd mode would otherwise skip both the verify and the push step and exit 0 --
+    # a workflow that publishes nothing and reports success.
+    - name: Validate mode
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+      run: |
+        case "$MODE" in
+          verify|push) ;;
+          *) echo "::error::mode must be 'verify' or 'push', got '${MODE}'."; exit 1 ;;
+        esac
+
+    - name: Setup Node ${{ inputs.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    # The command inputs cross into bash through env: and are run with `eval`, not pasted
+    # into the script text by ${{ }}. They are arbitrary code either way, but as data they
+    # cannot break the surrounding script -- a value containing a newline or a quote would
+    # otherwise inject extra lines or produce a bash syntax error.
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INSTALL_COMMAND: ${{ inputs.install-command }}
+      run: eval "$INSTALL_COMMAND"
+
+    # Before the build, so a failing suite cannot produce a published bundle.
+    - name: Test
+      if: inputs.test-command != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TEST_COMMAND: ${{ inputs.test-command }}
+      run: eval "$TEST_COMMAND"
+
+    - name: Build
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BUILD_COMMAND: ${{ inputs.build-command }}
+      run: eval "$BUILD_COMMAND"
+
+    - name: Detect bundle drift
+      id: drift
+      shell: bash
+      env:
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+      run: |
+        . "$GITHUB_ACTION_PATH/drift.sh"
+        changed="$(detect_drift "${WORKING_DIRECTORY}/${OUTPUT_DIR}")"
+        echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+
+    - name: Verify the committed bundle is current
+      if: inputs.mode == 'verify' && steps.drift.outputs.changed == 'true'
+      shell: bash
+      env:
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        BUILD_COMMAND: ${{ inputs.build-command }}
+      run: |
+        target="${WORKING_DIRECTORY}/${OUTPUT_DIR}"
+        echo "::error::${target} is stale. Run '${BUILD_COMMAND}' in ${WORKING_DIRECTORY} and commit the result."
+        git status --porcelain -- "$target"
+        git diff --stat -- "$target" || true
+        exit 1
+
+    # `bash <script>`, not the script as an executable: the exec bit is silently dropped by
+    # a Windows checkout, and the failure is a bare "Permission denied" with no clue.
+    - name: Commit, push and tag
+      id: publish
+      if: inputs.mode == 'push'
+      shell: bash
+      env:
+        WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        MAJOR_TAG: ${{ inputs.major-tag }}
+        VERSION_TAG_FROM: ${{ inputs.version-tag-from }}
+        VERSION_TAG_PREFIX: ${{ inputs.version-tag-prefix }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: bash "$GITHUB_ACTION_PATH/publish.sh"
