@@ -69,7 +69,7 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add ${{ env.DIST_FOLDER }}/**
-          git commit -m "Pack with dependencies to ${{ env.DIST_FOLDER }}"s
+          git commit -m "Pack with dependencies to ${{ env.DIST_FOLDER }}"
 
       - name: Push packed JS
         if: steps.commitPackedJs.outcome == 'success'
