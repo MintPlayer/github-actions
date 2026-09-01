@@ -225,6 +225,20 @@ describe('publish.sh', () => {
         }
         expect(persisted).not.toContain('notarealtoken');
     });
+
+    it('restores the credential actions/checkout persisted, rather than stripping it', () => {
+        // Same git config key checkout writes. Clearing it instead of restoring it would
+        // strip auth from every later step in the job -- invisibly, at the call site.
+        const persistedByCheckout = 'AUTHORIZATION: basic persisted-by-checkout';
+        git(work, 'config', '--local', '--add', 'http.https://github.com/.extraheader', persistedByCheckout);
+        rebuild();
+
+        const result = publish({ GH_TOKEN: 'ghs_notarealtoken_0123456789' });
+
+        expect(result.status).toBe(0);
+        expect(git(work, 'config', '--local', '--get-all', 'http.https://github.com/.extraheader'))
+            .toBe(persistedByCheckout);
+    });
 });
 
 describe('drift.sh', () => {

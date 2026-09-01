@@ -34,13 +34,27 @@ fi
 server_host="${GITHUB_SERVER_URL:-https://github.com}"
 credential_key="http.${server_host}/.extraheader"
 
-clear_credential() {
+# RESTORE rather than clear. This is the same key actions/checkout writes, and `token`
+# defaults to github.token so the trap always fires -- so simply unsetting it would strip
+# the credential checkout persisted for the REST of the job, breaking any later step that
+# pushes or fetches over HTTPS. Both current callers happen to end here, which is exactly
+# the kind of accident that stops being true when somebody appends a step.
+saved_credentials=()
+restore_credential() {
   git config --local --unset-all "$credential_key" 2>/dev/null || true
+  local value
+  for value in ${saved_credentials[@]+"${saved_credentials[@]}"}; do
+    git config --local --add "$credential_key" "$value"
+  done
 }
 
 if [ -n "${GH_TOKEN:-}" ]; then
-  trap clear_credential EXIT
-  clear_credential
+  while IFS= read -r saved; do
+    [ -n "$saved" ] && saved_credentials+=("$saved")
+  done < <(git config --local --get-all "$credential_key" 2>/dev/null || true)
+
+  trap restore_credential EXIT
+  git config --local --unset-all "$credential_key" 2>/dev/null || true
   git config --local --add "$credential_key" \
     "AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
 fi
