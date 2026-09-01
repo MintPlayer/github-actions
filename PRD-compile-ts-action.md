@@ -159,7 +159,7 @@ reliable statement about whether a commit happened.
 **Resolution.** A single `compile-ts-action/drift.sh` that both the composite step and `publish.sh`
 source. "Two modes, one code path", made real rather than asserted.
 
-### 5.3 The Node 18 → 20 switch, and what DoD #1 can actually mean
+### 5.3 The Node switch — measured, and it is a non-issue. The line endings are not.
 
 The committed `dist/` was produced under `node-version: 18.x` with `npm install`
 (`.github/workflows/publish.yml:13`, `:37`). Both new workflows build under `20.x` with `npm ci`.
@@ -169,10 +169,33 @@ under; byte-identical output across a major-version jump is not something to ass
 If it differs, the very PR that introduces `pull-request.yml` fails its own `verify` job, and the
 failure reads as *"your bundle is stale"* rather than *"the toolchain moved."*
 
-**Resolution.** Measured, not assumed — M5 rebuilds and reports. If the bytes move, the rebuilt
-bundles are committed in this PR so `verify` starts from a fixed point. DoD #1 is restated as
-*byte-identical when rebuilt under the same Node version*, which is the claim that actually proves
-the extraction faithful.
+**Measured rather than assumed.** `npm ci && npm run all` on this machine, under **Node 24.15.0**,
+against a `dist/` produced in CI by Node 18 with `npm install`:
+
+```
+IDENTICAL dist/cherry-pick/index.js          IDENTICAL dist/get-gpr-version/index.js
+IDENTICAL dist/coverage-upload/index.js      IDENTICAL dist/get-npmjs-version/index.js
+IDENTICAL dist/delay/index.js                IDENTICAL dist/publish-npm-packages/index.js
+```
+
+All six bundles are **byte-identical** (compared with `git hash-object`, not by size). `ncc` output
+here is a function of the pinned `@vercel/ncc` version and the dependency tree, not of the Node major
+running it. So the concern evaporates: no rebuild is needed, DoD #1 already holds, and the workflows
+can move straight to **Node 24** — which is what they do, matching the version this repo is developed
+on so a local build and a CI build agree.
+
+**What the measurement actually turned up.** `git status --porcelain -- dist` reported all six files
+as modified anyway. The cause is `core.autocrlf=true` (the Git-for-Windows default) with **no
+`.gitattributes` in the repository**: the bundles are stored LF and checked out CRLF, so every one
+looks rewritten while being byte-identical in content.
+
+That is a live hazard for the feature being built. A Windows contributor who runs the build and
+commits gets six 470 KB phantom diffs, and the new drift check fires on line endings rather than on a
+real rebuild. It is invisible today only because nothing has ever checked `dist/` for drift.
+
+**Resolution.** A `.gitattributes` pinning `* text=auto eol=lf`, so the bundles are LF on every
+platform and drift means drift. DoD #1 is restated as *byte-identical when rebuilt from the same
+lockfile*, which is the claim that actually proves the extraction faithful.
 
 ### 5.4 `inputs.token` is documented at length and wired to nothing
 
@@ -278,11 +301,11 @@ src/compile-ts-action/
 | M | Milestone | Commit |
 |---|---|---|
 | M0 | This PRD | `docs: PRD for compile-ts-action` |
-| M1 | `jest.config.js` test-path fix (§5.8); `yaml` devDependency for the metadata test | `fix(test): stop running every suite twice` |
+| M1 | `jest.config.js` test-path fix (§5.8); `.gitattributes` (§5.3); `yaml` devDependency for the metadata test | `fix(test): stop running every suite twice; pin bundles to LF` |
 | M2 | `action.yml`, `drift.sh`, `publish.sh` | `feat: compile-ts-action` |
 | M3 | Both test suites | `test: cover publish.sh and the action metadata` |
-| M4 | Both workflows | `ci: verify bundles on PR; publish via compile-ts-action` |
-| M5 | Node-20 rebuild if the bytes moved (§5.3); README | `build: repack under node 20` / `docs: README` |
+| M4 | Both workflows, on Node 24 | `ci: verify bundles on PR; publish via compile-ts-action` |
+| M5 | README | `docs: document compile-ts-action` |
 
 ### 6.1 How `publish.sh` is tested
 
@@ -306,11 +329,12 @@ with `include: ["**/*.ts"]`, so a `.ts` file outside `src/` fails the build with
 
 | Risk | Mitigation |
 |---|---|
-| Node 18→20 moves the bundle bytes; the PR fails its own verify | Measure in M5 and commit the rebuild (§5.3) |
+| ~~Node 18→20 moves the bundle bytes; the PR fails its own verify~~ | **Closed.** Measured byte-identical across 18→24 (§5.3) |
+| A Windows contributor's CRLF checkout makes the drift check fire on line endings | `.gitattributes` pins `eol=lf` (§5.3) |
 | A consumer without a `test` script gets a red build from the `npm test` default | Documented; `apps/CodeCoverage/action` must ship a `test` script or pass `test-command: ''` explicitly |
 | `push` mode holds `contents: write` and runs three caller-supplied commands | Inherent to the job; mitigated by never granting it on `pull_request` (§5.7f) |
 | The token rework diverges from what `actions/checkout` persisted | `extraheader` is exactly checkout's own mechanism; trap-cleared (§5.4) |
-| Local node is v24, so a Node-20 build is not reproducible on this machine | M5 measures under v24 first; if bytes are stable across 18→24 the concern is moot, otherwise CI does the rebuild |
+| `node-version: 24.x` resolves to the newest 24 at run time, so a future patch could in principle move the bytes | Bundles proved insensitive to the Node major (§5.3); if it ever happens, `verify` catches it on the next PR rather than shipping it |
 
 ## 8. Acceptance criteria
 

@@ -1,0 +1,5 @@
+# Normalize to LF everywhere. The dist/ bundles are generated artifacts committed so
+# consumers can run them: without this a Windows checkout flips them to CRLF, the next
+# commit carries a 470KB phantom diff, and the bundle-drift check fires on line endings
+# alone rather than on a real rebuild.
+* text=auto eol=lf
