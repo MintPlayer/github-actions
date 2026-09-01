@@ -26,15 +26,6 @@ detect_drift() {
     return 1
   fi
 
-  # A gitignored bundle can never be committed, so treating it as "unchanged" would
-  # make verify green forever and push fail hard. Same repo, opposite answers.
-  local ignored
-  ignored="$(git ls-files --others --ignored --exclude-standard -- "$target")"
-  if [ -n "$ignored" ]; then
-    echo "::error::${target} is gitignored, so its bundle can never be committed. Un-ignore it or point output-dir elsewhere." >&2
-    return 1
-  fi
-
   # --porcelain covers untracked files too. `git diff` does not, which is why a
   # first-ever build of a new action folder used to commit nothing at all.
   local status
@@ -42,7 +33,19 @@ detect_drift() {
 
   if [ -n "$status" ]; then
     echo true
-  else
-    echo false
+    return 0
   fi
+
+  # Silence from git status is ambiguous: either the bundle is genuinely current, or git
+  # has been told to ignore it and will stay silent forever. Only the second is a problem,
+  # and only for files git is not already tracking -- ignoring a tracked bundle is
+  # harmless, since git keeps reporting its changes either way.
+  local hidden
+  hidden="$(git ls-files --others --ignored --exclude-standard -- "$target")"
+  if [ -n "$hidden" ]; then
+    echo "::error::${target} is gitignored, so its bundle can never be committed and drift can never be detected. Un-ignore it or point output-dir elsewhere." >&2
+    return 1
+  fi
+
+  echo false
 }
