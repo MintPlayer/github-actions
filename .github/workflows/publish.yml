@@ -1,90 +1,41 @@
 name: Publish
+
 on:
   push:
     branches:
       - main
+
+permissions:
+  contents: write
+
+# Queue rather than cancel: two pushes in quick succession would otherwise run two
+# publishers that both commit, both push, and both force-move the major tag. Cancelling
+# one mid-push is worse than making it wait.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
-    env:
-      DIST_FOLDER: 'dist'
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [18.x]
+    timeout-minutes: 20
 
     steps:
-      - name: Checkout files
-        uses: actions/checkout@v4
-        with:
-          fetch-tags: true
+    - uses: actions/checkout@v4
+      with:
+        # Full history and tags, so publish.sh can tell an existing release tag from a new
+        # one. It re-fetches tags itself rather than trusting this, but starting from a
+        # complete clone keeps the push a fast-forward.
+        fetch-depth: 0
+        fetch-tags: true
 
-      - name: Fetch all tags
-        run: git fetch --prune --unshallow
-
-      - name: Setup Node ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-
-      - name: Extract branch name
-        id: extractBranch
-        shell: bash
-        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
-
-      - name: Install dependencies  
-        run: npm install
-
-      - name: Build
-        run: npm run all
-
-      #- name: Check packed JS changes
-      #  id: packedJsStatus
-      #  run: echo ::set-output name=changes::$(git status ${{ env.DIST_FOLDER }} --porcelain)
-
-      # - name: Check packed JS changes
-      #   id: packedJsStatus
-      #   run: |
-      #     git diff dist || echo "changes=true" >> $GITHUB_OUTPUT
-
-      # - id: files
-      #   uses: tj-actions/changed-files@v40
-      #   with:
-      #     files: |
-      #       'dist/**'
-      
-      
-      - name: Check packed JS changes
-        id: packedJsStatus
-        run: |
-          echo "changed_files=$(git diff --name-only dist | xargs)" >> $GITHUB_OUTPUT
-
-      - name: Print
-        run: echo ${{ steps.packedJsStatus.outputs.changed_files }}
-      
-      - name: Commit packed JS
-        id: commitPackedJs
-        if: steps.packedJsStatus.outputs.changed_files
-        #if: steps.files.outputs.any_changed
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add ${{ env.DIST_FOLDER }}/**
-          git commit -m "Pack with dependencies to ${{ env.DIST_FOLDER }}"
-
-      - name: Push packed JS
-        if: steps.commitPackedJs.outcome == 'success'
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          tags: true
-          force: true
-          branch: ${{ steps.extractBranch.outputs.branch }}
-        
-      # - name: Update Major Tag
-      #   run: |
-      #     git config --global user.email 'action@github.com'
-      #     git config --global user.name 'GitHub Action'
-      #     MAJOR_VERSION=$(git describe --tags | grep -o "v[0-9]*")
-      #     git tag -afm "Updated tag $MAJOR_VERSION to $(git describe --tags)" $MAJOR_VERSION
-      #     git push --tags --force
-
+    - uses: ./compile-ts-action
+      with:
+        working-directory: .
+        output-dir: dist
+        node-version: 24.x
+        install-command: npm ci
+        test-command: npm test
+        build-command: npm run all
+        mode: push
+        commit-message: 'Pack with dependencies to dist'

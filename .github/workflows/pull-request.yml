@@ -1,0 +1,41 @@
+name: pull-request
+
+on:
+  pull_request:
+    branches: [ main ]
+
+# NEVER convert this workflow to `pull_request_target`, and never add a secret to it.
+# On `pull_request` the checked-out merge commit contains the FORK's copy of
+# compile-ts-action/, including three inputs that are arbitrary shell by design. With
+# `contents: read`, no secrets, and a read-only token, the blast radius is the ephemeral
+# runner -- which is the accepted bargain. Under `pull_request_target` it would not be.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify bundles
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # One call: this repo builds every action from one root package.json, so `npm run all`
+    # rebuilds all six and the drift check covers dist/ wholesale.
+    #
+    # `uses: ./compile-ts-action` -- the repo verifies with its own copy, so a change to the
+    # compile action is exercised by the pull request that makes it.
+    - uses: ./compile-ts-action
+      with:
+        working-directory: .
+        output-dir: dist
+        node-version: 24.x
+        install-command: npm ci
+        test-command: npm test
+        build-command: npm run all
+        mode: verify
