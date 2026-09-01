@@ -102,81 +102,14 @@ instead. The major tag is the only ref that is ever force-pushed.
   in exactly the cases where it knows least.
 
 ## coverage-upload
-Uploads coverage reports to a self-hosted [Coverage](https://coverage.mintplayer.com)
-instance and, optionally, waits for the server to finalize the build so a CI job can gate
-on the result. Moved here from `MintPlayer/CodeCoverage`; the server itself now lives in
-`MintPlayer/MintPlayer.Spark` under `apps/CodeCoverage`.
+Moved out of this repository. The action now lives beside the server it talks to, at
+[`apps/CodeCoverage/action`](https://github.com/MintPlayer/MintPlayer.Spark/tree/master/apps/CodeCoverage/action)
+in `MintPlayer/MintPlayer.Spark`, and is published as `coverage-upload-v1` (moving) and
+`coverage-upload-v1.2.0` (immutable). Its inputs, outputs and usage are documented there.
 
-### Usage
+    - uses: MintPlayer/MintPlayer.Spark/apps/CodeCoverage/action@coverage-upload-v1
 
-    - uses: MintPlayer/github-actions/coverage-upload@main
-      with:
-        url: https://coverage.mintplayer.com
-        token: ${{ secrets.COVERAGE_TOKEN }}
-        files: |
-          tests/*/coverage/**/coverage.cobertura.xml
-        flags: dotnet
-        finish: true
-
-On a pull request, declare that the run measured only part of the workspace so the server
-compares like for like instead of reading the totals as a collapse:
-
-    - uses: MintPlayer/github-actions/coverage-upload@main
-      with:
-        url: https://coverage.mintplayer.com
-        token: ${{ secrets.COVERAGE_TOKEN }}
-        files: tests/*/coverage/**/coverage.cobertura.xml
-        partial: true
-        base-sha: ${{ github.event.pull_request.base.sha }}
-        finish: true
-
-Inside a GitHub Actions workflow you can drop `token` entirely and authenticate with the
-job's OIDC identity, provided the job requests `id-token: write`:
-
-    - uses: MintPlayer/github-actions/coverage-upload@main
-      with:
-        url: https://coverage.mintplayer.com
-        use-oidc: true
-
-### Inputs
-`url` is the only required input.
-
-- `url` (**required**) — base URL of the Coverage server.
-- `token` — upload token. Omit when using `use-oidc`.
-- `use-oidc` (default `false`) — authenticate with the job's OIDC token instead of `token`.
-  Needs `permissions: id-token: write`.
-- `files` — newline-separated globs of coverage reports. Cobertura and lcov are both accepted.
-- `directory` — directory to search when `files` is not given.
-- `disable-search` (default `false`) — do not auto-detect reports. Recommended: a glob that
-  matches nothing then uploads nothing, rather than sweeping up stray unparsable files.
-- `flags` — label for this upload, so several partial uploads on one commit stay distinguishable
-  (`dotnet`, `angular`, …).
-- `partial` (default `false`) — this run measured only a subset. Pair with `base-sha`.
-- `base-sha` — the commit to compare against.
-- `name` — display name for the upload.
-- `finish` (default `false`) — signal that no further uploads are coming for this build.
-- `fail-ci-if-error` (default `false`) — fail the step when the upload fails.
-- `wait-for-finalize` (default `false`) — block until the server finalizes the build, so the
-  job can gate on `state`.
-- `wait-timeout` (default `1800`) and `wait-poll-interval` (default `5`) — seconds.
-
-### Outputs
-26 outputs, useful mainly with `wait-for-finalize: true`. The ones most jobs read:
-
-- `state` — `Complete`, `CompleteWithErrors` or `InFlight`.
-- `build-id`, `session-id`, `build-status`, `finalize-reason`, `commit-url`.
-- Totals: `lines-covered`, `lines-coverable`, `line-rate`, `branches-covered`, `branches-total`,
-  `branch-rate`, `files-count`.
-- Patch coverage: `patch-lines-covered`, `patch-lines-coverable`, `patch-rate`,
-  `patch-diff-truncated`.
-- Baseline comparison: `base-resolution`, `resolved-base-sha`, `baseline-sha`,
-  `baseline-lines-covered`, `baseline-lines-coverable`, `baseline-line-rate`.
-- Projection, while a partial upload is still incomplete: `projection-line-rate`,
-  `projection-complete`, `projection-incomplete-reasons`.
-
-The upload API these map onto is documented in
-[`docs/code-coverage/upload-api.md`](https://github.com/MintPlayer/MintPlayer.Spark/blob/master/docs/code-coverage/upload-api.md)
-and is stable: fields are added, never removed.
+Its bundle is still built by [`compile-ts-action`](#compile-ts-action) from this repository.
 
 ## publish-npm-packages
 Auto-discovers every publishable `package.json` under a folder and publishes
