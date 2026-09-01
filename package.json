@@ -19,8 +19,9 @@
     "pack:get-gpr-version": "ncc build lib/get-gpr-version -o dist/get-gpr-version --minify",
     "pack:get-npmjs-version": "ncc build lib/get-npmjs-version -o dist/get-npmjs-version --minify",
     "pack:publish-npm-packages": "ncc build lib/publish-npm-packages -o dist/publish-npm-packages --minify",
-    "all": "npm run build && npm run pack:delay && npm run pack:cherry-pick && npm run pack:get-gpr-version && npm run pack:get-npmjs-version && npm run pack:publish-npm-packages",
-    "test": "jest"
+    "all": "npm run build && npm run pack:delay && npm run pack:cherry-pick && npm run pack:get-gpr-version && npm run pack:get-npmjs-version && npm run pack:publish-npm-packages && npm run pack:coverage-upload",
+    "test": "jest",
+    "pack:coverage-upload": "ncc build lib/coverage-upload/index -o dist/coverage-upload --minify"
   },
   "keywords": [
     "github",
@@ -37,6 +38,8 @@
   "dependencies": {
     "@actions/core": "^1.10.1",
     "@actions/exec": "^1.1.1",
+    "@actions/github": "^6.0.1",
+    "@actions/glob": "^0.5.0",
     "@jsdevtools/npm-publish": "^4.1.5",
     "@octokit/rest": "^21.0.2",
     "axios": "^1.7.7",
